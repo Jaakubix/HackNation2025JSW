@@ -1,0 +1,8 @@
+niepotrzebne/
+__pycache__/
+models/
+outputs/
+.idea/
+*.pyc
+
+*.mp4
