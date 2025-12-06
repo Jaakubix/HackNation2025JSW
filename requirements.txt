@@ -1,8 +1,0 @@
-opencv-python
-pandas
-tqdm
-matplotlib
-fastapi
-uvicorn[standard]
-streamlit
-pytest

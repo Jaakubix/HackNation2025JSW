@@ -1,8 +1,5 @@
-niepotrzebne/
-__pycache__/
-models/
-outputs/
-.idea/
-*.pyc
-
-*.mp4
+playground
+pretrained_models
+finetuned_models
+testdata
+detections_out
