@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Belt Monitor - System Monitorowania Taśmy</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0f0f1a;
+            --bg-secondary: #1a1a2e;
+            --bg-card: #16213e;
+            --accent: #00d4ff;
+            --accent-glow: rgba(0, 212, 255, 0.3);
+            --success: #00ff88;
+            --warning: #ffaa00;
+            --error: #ff4444;
+            --text-primary: #ffffff;
+            --text-secondary: #a0a0b0;
+            --border: rgba(255, 255, 255, 0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-card) 100%);
+            padding: 20px 40px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, var(--accent) 0%, #0066ff 100%);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+
+        .logo h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            background: linear-gradient(90deg, var(--accent) 0%, #fff 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: rgba(0, 255, 136, 0.1);
+            border: 1px solid var(--success);
+            border-radius: 20px;
+            font-size: 0.875rem;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--success);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Main Layout */
+        .main {
+            display: grid;
+            grid-template-columns: 1fr 400px;
+            gap: 20px;
+            padding: 20px 40px;
+            max-height: calc(100vh - 80px);
+        }
+
+        /* Video Section */
+        .video-section {
+            background: var(--bg-card);
+            border-radius: 16px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+        }
+
+        .video-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .video-header h2 {
+            font-size: 1rem;
+            font-weight: 500;
+        }
+
+        .video-container {
+            aspect-ratio: 16/9;
+            background: #000;
+            position: relative;
+        }
+
+        .video-container video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .video-placeholder {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: var(--text-secondary);
+        }
+
+        .video-placeholder svg {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        .video-controls {
+            padding: 16px 20px;
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        select, button {
+            padding: 10px 16px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        select:hover, button:hover {
+            border-color: var(--accent);
+        }
+
+        button.primary {
+            background: linear-gradient(135deg, var(--accent) 0%, #0066ff 100%);
+            border: none;
+            font-weight: 500;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            overflow-y: auto;
+        }
+
+        .card {
+            background: var(--bg-card);
+            border-radius: 16px;
+            border: 1px solid var(--border);
+            overflow: hidden;
+        }
+
+        .card-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .card-header h3 {
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .card-content {
+            padding: 20px;
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+
+        .stat-item {
+            background: var(--bg-secondary);
+            padding: 16px;
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 1.75rem;
+            font-weight: 600;
+            color: var(--accent);
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        /* Alerts List */
+        .alerts-list {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .alert-item {
+            padding: 12px;
+            margin-bottom: 8px;
+            border-radius: 8px;
+            border-left: 3px solid;
+            font-size: 0.8rem;
+        }
+
+        .alert-item.critical {
+            background: rgba(255, 68, 68, 0.1);
+            border-color: var(--error);
+        }
+
+        .alert-item.high {
+            background: rgba(255, 170, 0, 0.1);
+            border-color: var(--warning);
+        }
+
+        .alert-item.medium {
+            background: rgba(0, 212, 255, 0.1);
+            border-color: var(--accent);
+        }
+
+        .alert-item.low {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: var(--text-secondary);
+        }
+
+        .alert-time {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+        }
+
+        /* Cycles Table */
+        .cycles-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8rem;
+        }
+
+        .cycles-table th, .cycles-table td {
+            padding: 10px 8px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .cycles-table th {
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .cycles-table tbody {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        /* Download Button */
+        .download-btn {
+            width: 100%;
+            padding: 14px;
+            margin-top: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 30px;
+            color: var(--text-secondary);
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg-secondary);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--accent);
+            border-radius: 3px;
+        }
+
+        /* Responsive */
+        @media (max-width: 1200px) {
+            .main {
+                grid-template-columns: 1fr;
+                max-height: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="logo">
+            <div class="logo-icon">⚙️</div>
+            <h1>Belt Monitor</h1>
+        </div>
+        <div class="status-badge">
+            <div class="status-dot"></div>
+            <span id="status-text">System aktywny</span>
+        </div>
+    </header>
+
+    <main class="main">
+        <!-- Video Section -->
+        <section class="video-section">
+            <div class="video-header">
+                <h2>📹 Podgląd Nagrania</h2>
+                <span id="video-info" style="font-size: 0.8rem; color: var(--text-secondary);"></span>
+            </div>
+            <div class="video-container">
+                <video id="video-player" controls>
+                    <source src="" type="video/mp4">
+                    Twoja przeglądarka nie obsługuje wideo.
+                </video>
+            </div>
+            <div class="video-controls">
+                <select id="video-select">
+                    <option value="">-- Wybierz nagranie --</option>
+                </select>
+                <button onclick="loadVideo()" class="primary">▶ Odtwórz</button>
+                <button onclick="refreshData()">🔄 Odśwież dane</button>
+            </div>
+        </section>
+
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <!-- Stats Card -->
+            <div class="card">
+                <div class="card-header">
+                    <h3>📊 Statystyki</h3>
+                </div>
+                <div class="card-content">
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <div class="stat-value" id="stat-cycles">0</div>
+                            <div class="stat-label">Cykle</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="stat-alerts">0</div>
+                            <div class="stat-label">Alerty</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="stat-avg-width">0</div>
+                            <div class="stat-label">Śr. Szerokość</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="stat-min-width">0</div>
+                            <div class="stat-label">Min. Szerokość</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Alerts Card -->
+            <div class="card">
+                <div class="card-header">
+                    <h3>⚠️ Alerty</h3>
+                    <span id="alerts-count" style="font-size: 0.75rem; color: var(--text-secondary);">0 alertów</span>
+                </div>
+                <div class="card-content">
+                    <div class="alerts-list" id="alerts-list">
+                        <div class="empty-state">Brak alertów</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Cycles Card -->
+            <div class="card">
+                <div class="card-header">
+                    <h3>🔄 Ostatnie Cykle</h3>
+                </div>
+                <div class="card-content">
+                    <table class="cycles-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Max</th>
+                                <th>Min</th>
+                                <th>Alerty</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cycles-tbody">
+                        </tbody>
+                    </table>
+                    <button class="download-btn" onclick="downloadCSV()">
+                        📥 Pobierz CSV
+                    </button>
+                </div>
+            </div>
+        </aside>
+    </main>
+
+    <script>
+        const API_BASE = window.location.origin;
+
+        // Fetch videos list
+        async function fetchVideos() {
+            try {
+                const res = await fetch(`${API_BASE}/api/videos`);
+                const videos = await res.json();
+                const select = document.getElementById('video-select');
+                
+                videos.forEach(v => {
+                    const option = document.createElement('option');
+                    option.value = v.filename;
+                    option.textContent = `${v.filename} (${v.size_mb} MB)`;
+                    select.appendChild(option);
+                });
+            } catch (e) {
+                console.error('Błąd pobierania listy wideo:', e);
+            }
+        }
+
+        // Load selected video
+        function loadVideo() {
+            const select = document.getElementById('video-select');
+            const filename = select.value;
+            
+            if (!filename) {
+                alert('Wybierz nagranie');
+                return;
+            }
+            
+            const video = document.getElementById('video-player');
+            video.src = `${API_BASE}/api/video/${filename}`;
+            video.load();
+            
+            document.getElementById('video-info').textContent = filename;
+        }
+
+        // Fetch stats
+        async function fetchStats() {
+            try {
+                const res = await fetch(`${API_BASE}/api/stats`);
+                const stats = await res.json();
+                
+                document.getElementById('stat-cycles').textContent = stats.total_cycles || 0;
+                document.getElementById('stat-alerts').textContent = stats.total_alerts || 0;
+                document.getElementById('stat-avg-width').textContent = stats.avg_max_width || 0;
+                document.getElementById('stat-min-width').textContent = stats.avg_min_width || 0;
+            } catch (e) {
+                console.error('Błąd pobierania statystyk:', e);
+            }
+        }
+
+        // Fetch cycles
+        async function fetchCycles() {
+            try {
+                const res = await fetch(`${API_BASE}/api/cycles?limit=10`);
+                const cycles = await res.json();
+                
+                const tbody = document.getElementById('cycles-tbody');
+                tbody.innerHTML = '';
+                
+                if (cycles.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-secondary);">Brak danych</td></tr>';
+                    return;
+                }
+                
+                cycles.slice().reverse().forEach(c => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>#${c.cycle_id}</td>
+                        <td>${c.max_width}</td>
+                        <td>${c.min_width}</td>
+                        <td>${c.alerts.length > 0 ? '⚠️' : '✅'}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch (e) {
+                console.error('Błąd pobierania cykli:', e);
+            }
+        }
+
+        // Fetch alerts
+        async function fetchAlerts() {
+            try {
+                const res = await fetch(`${API_BASE}/api/alerts`);
+                const alerts = await res.json();
+                
+                const list = document.getElementById('alerts-list');
+                document.getElementById('alerts-count').textContent = `${alerts.length} alertów`;
+                
+                if (alerts.length === 0) {
+                    list.innerHTML = '<div class="empty-state">Brak alertów</div>';
+                    return;
+                }
+                
+                list.innerHTML = '';
+                alerts.slice(-10).reverse().forEach(a => {
+                    const div = document.createElement('div');
+                    div.className = `alert-item ${a.severity.toLowerCase()}`;
+                    div.innerHTML = `
+                        <strong>${a.type}</strong>
+                        <p>${a.message}</p>
+                        <span class="alert-time">${new Date(a.timestamp).toLocaleString('pl-PL')}</span>
+                    `;
+                    list.appendChild(div);
+                });
+            } catch (e) {
+                console.error('Błąd pobierania alertów:', e);
+            }
+        }
+
+        // Download CSV
+        function downloadCSV() {
+            window.location.href = `${API_BASE}/api/csv/download`;
+        }
+
+        // Refresh all data
+        function refreshData() {
+            fetchStats();
+            fetchCycles();
+            fetchAlerts();
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchVideos();
+            refreshData();
+            
+            // Auto-refresh every 10 seconds
+            setInterval(refreshData, 10000);
+        });
+    </script>
+</body>
+</html>

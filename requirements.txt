@@ -1,0 +1,23 @@
+# Belt Monitoring System - Dependencies
+
+# Web Framework
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.18
+
+# Data Processing
+pandas==2.3.2
+numpy==2.0.1
+opencv-python-headless==4.10.0.84
+
+# ML/DL (if using inference)
+torch==2.5.1
+torchvision==0.20.1
+
+# Utilities
+python-dotenv==1.1.1
+pydantic==2.10.4
+tqdm==4.67.1
+
+# Optional: Excel export
+openpyxl==3.1.5
