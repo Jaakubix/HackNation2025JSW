@@ -3,3 +3,7 @@ pretrained_models
 finetuned_models
 testdata
 detections_out
+*.mp4
+*.mov
+*.avi
+*.mkv

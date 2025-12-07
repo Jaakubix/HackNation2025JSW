@@ -192,7 +192,21 @@ def getCOCODataset():
     """
     # Akceptuj zarówno DATA_ROOT jak i DATA_ROOT/data
     data_dir = DATA_ROOT / "data" if (DATA_ROOT / "data").exists() else DATA_ROOT
-    ann_file = data_dir / "_annotations.coco.json"
+    
+    # Custom overrides for dual training
+    custom_ann = os.getenv("CUSTOM_ANN_FILE")
+    custom_img_dir = os.getenv("CUSTOM_IMG_DIR")
+    
+    if custom_ann:
+        ann_file = data_dir / custom_ann
+    else:
+        ann_file = data_dir / "_annotations.coco.json"
+        
+    if custom_img_dir:
+        # If custom img dir is provided, we use it as root for CocoDetAsTargets
+        # But data_dir is still used for other things?
+        # CocoDetAsTargets takes 'root'.
+        pass
 
     if not data_dir.exists() or not ann_file.exists():
         raise FileNotFoundError(f"Brak katalogu/plików adnotacji COCO: {data_dir} lub {ann_file}")
@@ -200,7 +214,9 @@ def getCOCODataset():
     tf = transforms.Compose([transforms.ToTensor()])
 
     # Pełny dataset (bez podziału)
-    full_ds = CocoDetAsTargets(str(data_dir), str(ann_file), tf=tf)
+    # Use custom_img_dir if set, else data_dir
+    img_root = str(custom_img_dir) if custom_img_dir else str(data_dir)
+    full_ds = CocoDetAsTargets(img_root, str(ann_file), tf=tf)
 
     # Liczba klas = liczba kategorii + 1 (tło)
     cat_ids = sorted(full_ds.coco.getCatIds())
