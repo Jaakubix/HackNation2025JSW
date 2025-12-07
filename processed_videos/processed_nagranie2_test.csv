@@ -1,2 +1,2 @@
 cycle_id,timestamp,segment_count,seam_count,max_width,min_width,avg_width,alerts
-1,2025-12-07T07:08:42.190935,1200,0,1854.06,1789.77,1839.56,[LOW] SEAM_MISSING: Brak oczekiwanego szwu w cyklu
+1,2025-12-07T08:55:56.349685,1200,0,1854.06,1789.77,1839.56,[LOW] SEAM_MISSING: Brak oczekiwanego szwu w cyklu

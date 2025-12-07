@@ -16,7 +16,7 @@ def test_upload_and_process():
     # 2. Upload file
     print("Testing upload and processing...")
     
-    filename = "nagranie2_test.mp4"
+    filename = "nagranie3_long_test.mp4"
     files = {'file': open(filename, 'rb')}
     data = {'seams': 1}
     
@@ -31,7 +31,7 @@ def test_upload_and_process():
     # 4. Wait for processing using progress endpoint
     print("Waiting for processing...")
     start_time = time.time()
-    max_wait = 300  # 5 minutes timeout
+    max_wait = 900  # 15 minutes timeout
     
     while time.time() - start_time < max_wait:
         try:
@@ -62,16 +62,31 @@ def test_upload_and_process():
         print("Failed to get stats")
 
     # 5. Check for processed video
-    processed_path = "processed_videos/processed_nagranie2_test.mp4"
+    processed_path = f"processed_videos/processed_{filename}"
     if os.path.exists(processed_path):
         print(f"SUCCESS: Processed video found at {processed_path}")
     else:
         print(f"FAILURE: Processed video NOT found at {processed_path}")
 
     # 6. Check for specific CSV report
-    csv_path = "processed_videos/processed_nagranie2_test.csv"
+    csv_path = f"processed_videos/processed_{filename.replace('.mp4', '.csv')}"
     if os.path.exists(csv_path):
         print(f"SUCCESS: Specific CSV report found at {csv_path}")
+        
+        # Verify seam detection
+        import csv
+        with open(csv_path, 'r') as f:
+            reader = csv.DictReader(f)
+            total_seams = 0
+            for row in reader:
+                total_seams += int(row['seam_count'])
+        
+        print(f"Total seams detected: {total_seams}")
+        if total_seams > 0:
+            print("SUCCESS: Seams detected in the video!")
+        else:
+            print("FAILURE: No seams detected (expected at least 1)")
+            
     else:
         print(f"FAILURE: Specific CSV report NOT found at {csv_path}")
 

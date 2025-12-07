@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from csv_logger import CSVLogger
 from alert_system import AlertGenerator, AlertThresholds
 from monitor_live import run_monitoring
+from inference_dual import run_dual_inference
 
 app = FastAPI(
     title="Belt Monitoring API",
@@ -89,29 +90,16 @@ def process_video_task(video_path: str, seams: int):
         output_csv_path = PROCESSED_DIR / csv_filename
         
         # Run monitoring (generates mpeg4 video)
-        run_monitoring(
-            source=video_path,
+        # Using inference_dual.py logic as requested by user
+        # Direct output to final path since we skip H.264 conversion
+        run_dual_inference(
+            video_path=video_path,
+            output_path=str(output_path),
             csv_path=str(output_csv_path),
-            output_video=str(temp_output_path),
-            show_preview=False, # No preview for background task
             seams_per_cycle=seams,
             progress_callback=update_progress
         )
         
-        # Convert to H.264 for web compatibility
-        import subprocess
-        print(f"Converting {temp_output_path} to H.264...")
-        subprocess.run([
-            "ffmpeg", "-y", "-i", str(temp_output_path),
-            "-c:v", "libx264", "-preset", "fast", "-crf", "23",
-            "-c:a", "aac", "-b:a", "128k",
-            str(output_path)
-        ], check=True)
-        
-        # Remove temp file
-        if temp_output_path.exists():
-            temp_output_path.unlink()
-            
         # Mark as complete
         processing_progress[filename] = 100
             
@@ -216,14 +204,26 @@ async def get_status():
 @app.get("/api/cycles", response_model=List[CycleData])
 async def get_cycles(
     limit: int = Query(100, description="Maksymalna liczba cykli do zwrócenia"),
-    offset: int = Query(0, description="Offset (paginacja)")
+    offset: int = Query(0, description="Offset (paginacja)"),
+    filename: Optional[str] = Query(None, description="Nazwa pliku wideo (opcjonalnie)")
 ):
     """
     Pobierz dane wszystkich cykli z pliku CSV.
     
     Zwraca listę cykli z informacjami o szerokości taśmy i alertach.
     """
-    cycles = csv_logger.get_all_cycles()
+    if filename:
+        # If filename provided, read from processed CSV
+        # Filename might be "processed_..." or original. 
+        # Frontend sends the value from select, which is "processed_..."
+        csv_path = PROCESSED_DIR / f"{Path(filename).stem}.csv"
+        if not csv_path.exists():
+            return []
+        logger = CSVLogger(str(csv_path))
+        cycles = logger.get_all_cycles()
+    else:
+        # Default to global logger
+        cycles = csv_logger.get_all_cycles()
     
     # Paginacja
     paginated = cycles[offset:offset + limit]

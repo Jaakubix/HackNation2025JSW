@@ -422,24 +422,6 @@
     <main class="main">
         <!-- Left Column: Video + Chart -->
         <div class="left-column">
-            <!-- Video Section -->
-            <section class="video-section">
-                <div class="video-header">
-                    <h2>📹 Podgląd Nagrania</h2>
-                    <span id="video-info" style="font-size: 0.8rem; color: var(--text-secondary);"></span>
-                </div>
-                <div class="video-container">
-                    <video id="video-player" controls>
-                        <source src="" type="video/mp4">
-                    </video>
-                </div>
-                <div class="video-controls">
-                    <select id="video-select">
-                        <option value="">-- Wybierz nagranie --</option>
-                    </select>
-                    <button onclick="loadVideo()" class="primary">▶ Odtwórz</button>
-                    <button onclick="refreshData()">🔄 Odśwież dane</button>
-                </div>
             </section>
 
             <!-- CHART SECTION - PROMINENT -->
@@ -587,6 +569,7 @@
         const API_BASE = window.location.origin;
         let widthChart = null;
         let allCycles = [];
+        let currentVideo = null;
 
         // Initialize Chart
         function initChart() {
@@ -756,11 +739,18 @@
                 return;
             }
 
-            const video = document.getElementById('video-player');
-            video.src = `${API_BASE}/api/video/${filename}`;
-            video.load();
+            currentVideo = filename;
+
+            // Video player disabled as per request
+            // const video = document.getElementById('video-player');
+            // video.src = `${API_BASE}/api/video/${filename}`;
+            // video.load();
 
             document.getElementById('video-info').textContent = filename;
+
+            // Fetch stats for this video
+            fetchCycles(filename);
+            fetchAlerts(filename);
         }
 
         // Fetch stats
@@ -779,9 +769,13 @@
         }
 
         // Fetch cycles
-        async function fetchCycles() {
+        async function fetchCycles(filename = null) {
             try {
-                const res = await fetch(`${API_BASE}/api/cycles?limit=50`);
+                let url = `${API_BASE}/api/cycles?limit=50`;
+                if (filename) {
+                    url += `&filename=${encodeURIComponent(filename)}`;
+                }
+                const res = await fetch(url);
                 const cycles = await res.json();
                 allCycles = cycles;
 
@@ -814,9 +808,13 @@
         }
 
         // Fetch alerts
-        async function fetchAlerts() {
+        async function fetchAlerts(filename = null) {
             try {
-                const res = await fetch(`${API_BASE}/api/alerts`);
+                let url = `${API_BASE}/api/alerts`;
+                if (filename) {
+                    url += `?filename=${encodeURIComponent(filename)}`;
+                }
+                const res = await fetch(url);
                 const alerts = await res.json();
 
                 const list = document.getElementById('alerts-list');
@@ -841,6 +839,70 @@
             } catch (e) {
                 console.error('Błąd pobierania alertów:', e);
             }
+        }
+
+        // Helper: Reset upload button
+        function resetUploadButton(btn, originalText) {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+            document.getElementById('progress-container').classList.add('hidden');
+        }
+
+        // Helper: Start progress polling
+        function startProgressPolling(filename, btn, originalText) {
+            const progressContainer = document.getElementById('progress-container');
+            const progressBar = document.getElementById('progress-bar');
+            const progressText = document.getElementById('progress-text');
+            const statusDiv = document.getElementById('upload-status');
+
+            progressContainer.classList.remove('hidden');
+            progressBar.style.width = '0%';
+            progressText.textContent = '0%';
+            statusDiv.textContent = 'Przetwarzanie w toku...';
+
+            const interval = setInterval(async () => {
+                try {
+                    const res = await fetch(`${API_BASE}/api/progress/${filename}`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        const percent = data.progress;
+
+                        progressBar.style.width = `${percent}%`;
+                        progressText.textContent = `${percent}%`;
+
+                        if (data.status === 'completed' || percent >= 100) {
+                            clearInterval(interval);
+                            statusDiv.textContent = 'Zakończono!';
+                            statusDiv.style.color = '#4ade80';
+                            resetUploadButton(btn, originalText);
+                            alert('Przetwarzanie zakończone! Możesz teraz pobrać raport.');
+
+                            // Refresh list and auto-select the new video
+                            await fetchVideos();
+
+                            // Force set currentVideo to the processed filename
+                            // This ensures download works even if dropdown fails
+                            const processedFilename = `processed_${filename}`;
+                            currentVideo = processedFilename;
+
+                            // Fetch data for the new video immediately
+                            fetchCycles(currentVideo);
+                            fetchAlerts(currentVideo);
+
+                            // Try to update dropdown UI if possible
+                            const select = document.getElementById('video-select');
+                            if (select.querySelector(`option[value="${processedFilename}"]`)) {
+                                select.value = processedFilename;
+                            }
+
+                            // Auto-download the CSV report
+                            downloadReport();
+                        }
+                    }
+                } catch (e) {
+                    console.error('Progress polling error:', e);
+                }
+            }, 1000);
         }
 
         // Upload Video
@@ -889,19 +951,18 @@
         }
 
         // Download specific report for current video
+        // Download specific report for current video
         function downloadReport() {
             if (!currentVideo) {
                 alert('Wybierz najpierw wideo!');
                 return;
             }
-            // If currentVideo is processed_..., strip prefix to get original filename
-            let filename = currentVideo;
-            if (filename.startsWith('processed_')) {
-                filename = filename.replace('processed_', '');
-            }
+
+            // Use full filename as it appears in the list (processed_...)
+            const filename = currentVideo;
 
             const link = document.createElement('a');
-            link.href = `/api/report/${filename}`;
+            link.href = `/api/report/${filename}?t=${new Date().getTime()}`;
             link.download = `report_${filename}.csv`;
             document.body.appendChild(link);
             link.click();
@@ -909,15 +970,30 @@
         }
 
         // Download global CSV
+        // Download specific report
         function downloadCSV() {
-            window.location.href = `${API_BASE}/api/csv/download`;
+            if (currentVideo) {
+                downloadReport();
+            } else {
+                alert('Wybierz najpierw wideo z listy, aby pobrać raport.');
+            }
         }
 
         // Refresh all data
+        // Refresh all data
         function refreshData() {
+            // If currentVideo is set, use it. Otherwise null (global stats)
+            // Note: fetchStats is global only, but cycles/alerts can be specific
             fetchStats();
-            fetchCycles();
-            fetchAlerts();
+
+            // Use the global currentVideo variable
+            if (currentVideo) {
+                fetchCycles(currentVideo);
+                fetchAlerts(currentVideo);
+            } else {
+                fetchCycles();
+                fetchAlerts();
+            }
         }
 
         // Initialize

@@ -5,6 +5,7 @@ import os
 import argparse
 from pathlib import Path
 from tqdm import tqdm
+from typing import Optional
 from utils import upload_envs, selectDevice
 from torchvision.transforms import functional as F
 
@@ -173,23 +174,22 @@ class FilterState:
         # Convert back to BGR for model input (model expects 3 channels)
         return cv2.cvtColor(soft_filtered, cv2.COLOR_GRAY2BGR)
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("video_path", help="Path to input video")
-    parser.add_argument("--output", help="Path to output video", default="output_dual.mp4")
-    args = parser.parse_args()
-    
+from belt_monitor import BeltMonitor
+
+def run_dual_inference(
+    video_path: str,
+    output_path: str,
+    csv_path: Optional[str] = None,
+    seams_per_cycle: int = 1,
+    progress_callback: Optional[callable] = None
+):
     device = selectDevice()
     
     # Load Models
-    # Num classes = 2 (background + class)
-    # Tape Model: Class 1 = tasma
     tape_model = load_model("finetuned_models/tape_model.pth", num_classes=2, device=device)
-    
-    # Seam Model: Class 1 = szew
     seam_model = load_model("finetuned_models/seam_model.pth", num_classes=2, device=device)
     
-    cap = cv2.VideoCapture(args.video_path)
+    cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         print("Error opening video")
         return
@@ -198,16 +198,38 @@ def main():
     h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS)
     
-    out = cv2.VideoWriter(args.output, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
+    out = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
     
     filter_state = FilterState()
+    
+    # Initialize monitor if CSV path provided
+    monitor = None
+    if csv_path:
+        # Ensure fresh CSV file
+        csv_p = Path(csv_path)
+        if csv_p.exists():
+            csv_p.unlink()
+            
+        monitor = BeltMonitor(csv_path=csv_path, seams_per_cycle=seams_per_cycle)
+        monitor.is_running = True
     
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     print(f"Starting inference on {total_frames} frames...")
     
-    for _ in tqdm(range(total_frames), desc="Processing"):
+    frame_count = 0
+    
+    # Use tqdm only if no progress callback (CLI mode)
+    iterator = range(total_frames)
+    if not progress_callback:
+        iterator = tqdm(iterator, desc="Processing")
+        
+    for _ in iterator:
         ret, frame = cap.read()
         if not ret: break
+        
+        frame_count += 1
+        if progress_callback:
+            progress_callback(frame_count, total_frames)
         
         # 1. Tape Inference (Original Frame)
         img_tensor = F.to_tensor(frame).to(device)
@@ -218,22 +240,40 @@ def main():
         filtered_tensor = F.to_tensor(filtered_frame).to(device)
         seam_boxes, seam_scores, seam_labels, seam_masks = get_prediction(seam_model, filtered_tensor)
         
-        # 3. Draw Results
-# Draw Tape (Green)
+        # 3. Update Monitor (CSV)
+        if monitor:
+            monitor.process_frame(tape_boxes, tape_scores, seam_boxes, seam_scores)
+        
+        # 4. Draw Results
+        # Draw Tape (Green)
         frame = draw_detections(frame, tape_boxes, tape_scores, tape_labels, (0, 255, 0), {1: "Tasma"}, tape_masks)
         
         # Draw Seam (Red)
         frame = draw_detections(frame, seam_boxes, seam_scores, seam_labels, (0, 0, 255), {1: "Szew"}, seam_masks)
         
-        # Optional: Show filtered frame in corner?
-        # small_filtered = cv2.resize(filtered_frame, (w//4, h//4))
-        # frame[0:h//4, 0:w//4] = small_filtered
-        
         out.write(frame)
+        
+    if monitor:
+        monitor.finalize()
         
     cap.release()
     out.release()
-    print(f"Done. Output saved to {args.output}")
+    print(f"Done. Output saved to {output_path}")
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--video_path", type=str, required=True)
+    parser.add_argument("--output", type=str, required=True)
+    parser.add_argument("--csv_output", type=str, help="Path to output CSV", default=None)
+    parser.add_argument("--seams", type=int, default=1, help="Seams per cycle")
+    args = parser.parse_args()
+    
+    run_dual_inference(
+        video_path=args.video_path,
+        output_path=args.output,
+        csv_path=args.csv_output,
+        seams_per_cycle=args.seams
+    )
 
 if __name__ == "__main__":
     main()
