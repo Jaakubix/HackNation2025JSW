@@ -54,16 +54,18 @@ class CycleData:
 class BeltWidthAnalyzer:
     """Analizator szerokości taśmy na podstawie bounding boxów."""
     
-    def __init__(self, orientation: str = "horizontal"):
+    def __init__(self, measurement_level: float = 0.5):
         """
         Args:
-            orientation: Orientacja taśmy - "horizontal" lub "vertical"
+            measurement_level: Poziom pomiaru (0.0 = góra, 0.5 = środek, 1.0 = dół)
+                              Używamy stałego poziomu żeby uniknąć problemów z perspektywą
         """
-        self.orientation = orientation
+        self.measurement_level = measurement_level
     
     def calculate_width(self, boxes: np.ndarray) -> List[float]:
         """
         Oblicza szerokości taśmy z bounding boxów.
+        Szerokość = różnica X (x2 - x1) - mierzymy poziomo
         
         Args:
             boxes: Tensor/array bounding boxów [x1, y1, x2, y2]
@@ -80,14 +82,12 @@ class BeltWidthAnalyzer:
                 box = box.cpu().numpy()
             x1, y1, x2, y2 = box[:4]
             
-            if self.orientation == "horizontal":
-                # Dla taśmy poziomej - szerokość to różnica Y (wysokość boxa)
-                width = y2 - y1
-            else:
-                # Dla taśmy pionowej - szerokość to różnica X
-                width = x2 - x1
+            # Szerokość = różnica X (pomiar poziomy)
+            width = x2 - x1
             
             widths.append(float(width))
+        
+        return widths
         
         return widths
     

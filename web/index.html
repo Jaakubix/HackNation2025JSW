@@ -1,10 +1,12 @@
 <!DOCTYPE html>
 <html lang="pl">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Belt Monitor - System Monitorowania Taśmy</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
             --bg-primary: #0f0f1a;
@@ -65,6 +67,7 @@
             font-weight: 600;
             background: linear-gradient(90deg, var(--accent) 0%, #fff 100%);
             -webkit-background-clip: text;
+            background-clip: text;
             -webkit-text-fill-color: transparent;
         }
 
@@ -88,17 +91,29 @@
         }
 
         @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
         }
 
         /* Main Layout */
         .main {
             display: grid;
-            grid-template-columns: 1fr 400px;
+            grid-template-columns: 1fr 380px;
             gap: 20px;
             padding: 20px 40px;
-            max-height: calc(100vh - 80px);
+        }
+
+        .left-column {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
         }
 
         /* Video Section */
@@ -134,22 +149,6 @@
             object-fit: contain;
         }
 
-        .video-placeholder {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100%;
-            color: var(--text-secondary);
-        }
-
-        .video-placeholder svg {
-            width: 64px;
-            height: 64px;
-            margin-bottom: 16px;
-            opacity: 0.5;
-        }
-
         .video-controls {
             padding: 16px 20px;
             display: flex;
@@ -157,7 +156,8 @@
             flex-wrap: wrap;
         }
 
-        select, button {
+        select,
+        button {
             padding: 10px 16px;
             border-radius: 8px;
             border: 1px solid var(--border);
@@ -169,7 +169,8 @@
             transition: all 0.2s;
         }
 
-        select:hover, button:hover {
+        select:hover,
+        button:hover {
             border-color: var(--accent);
         }
 
@@ -177,6 +178,76 @@
             background: linear-gradient(135deg, var(--accent) 0%, #0066ff 100%);
             border: none;
             font-weight: 500;
+        }
+
+        /* Chart Section - PROMINENT */
+        .chart-section {
+            background: var(--bg-card);
+            border-radius: 16px;
+            border: 2px solid var(--accent);
+            overflow: hidden;
+            box-shadow: 0 0 30px rgba(0, 212, 255, 0.2);
+        }
+
+        .chart-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            background: linear-gradient(90deg, rgba(0, 212, 255, 0.1) 0%, transparent 100%);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chart-header h2 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--accent);
+        }
+
+        .chart-container {
+            padding: 20px;
+            height: 300px;
+        }
+
+        .chart-stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+            padding: 0 20px 20px;
+        }
+
+        .chart-stat {
+            background: var(--bg-secondary);
+            padding: 12px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .chart-stat-value {
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .chart-stat-value.max {
+            color: var(--success);
+        }
+
+        .chart-stat-value.min {
+            color: var(--error);
+        }
+
+        .chart-stat-value.avg {
+            color: var(--accent);
+        }
+
+        .chart-stat-value.std {
+            color: var(--warning);
+        }
+
+        .chart-stat-label {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            margin-top: 4px;
         }
 
         /* Sidebar */
@@ -283,7 +354,8 @@
             font-size: 0.8rem;
         }
 
-        .cycles-table th, .cycles-table td {
+        .cycles-table th,
+        .cycles-table td {
             padding: 10px 8px;
             text-align: left;
             border-bottom: 1px solid var(--border);
@@ -292,11 +364,6 @@
         .cycles-table th {
             color: var(--text-secondary);
             font-weight: 500;
-        }
-
-        .cycles-table tbody {
-            max-height: 200px;
-            overflow-y: auto;
         }
 
         /* Download Button */
@@ -335,11 +402,11 @@
         @media (max-width: 1200px) {
             .main {
                 grid-template-columns: 1fr;
-                max-height: none;
             }
         }
     </style>
 </head>
+
 <body>
     <header class="header">
         <div class="logo">
@@ -353,26 +420,58 @@
     </header>
 
     <main class="main">
-        <!-- Video Section -->
-        <section class="video-section">
-            <div class="video-header">
-                <h2>📹 Podgląd Nagrania</h2>
-                <span id="video-info" style="font-size: 0.8rem; color: var(--text-secondary);"></span>
-            </div>
-            <div class="video-container">
-                <video id="video-player" controls>
-                    <source src="" type="video/mp4">
-                    Twoja przeglądarka nie obsługuje wideo.
-                </video>
-            </div>
-            <div class="video-controls">
-                <select id="video-select">
-                    <option value="">-- Wybierz nagranie --</option>
-                </select>
-                <button onclick="loadVideo()" class="primary">▶ Odtwórz</button>
-                <button onclick="refreshData()">🔄 Odśwież dane</button>
-            </div>
-        </section>
+        <!-- Left Column: Video + Chart -->
+        <div class="left-column">
+            <!-- Video Section -->
+            <section class="video-section">
+                <div class="video-header">
+                    <h2>📹 Podgląd Nagrania</h2>
+                    <span id="video-info" style="font-size: 0.8rem; color: var(--text-secondary);"></span>
+                </div>
+                <div class="video-container">
+                    <video id="video-player" controls>
+                        <source src="" type="video/mp4">
+                    </video>
+                </div>
+                <div class="video-controls">
+                    <select id="video-select">
+                        <option value="">-- Wybierz nagranie --</option>
+                    </select>
+                    <button onclick="loadVideo()" class="primary">▶ Odtwórz</button>
+                    <button onclick="refreshData()">🔄 Odśwież dane</button>
+                </div>
+            </section>
+
+            <!-- CHART SECTION - PROMINENT -->
+            <section class="chart-section">
+                <div class="chart-header">
+                    <h2>📈 Szerokość Taśmy w Czasie</h2>
+                    <span id="chart-info" style="font-size: 0.75rem; color: var(--text-secondary);">Dane z ostatnich
+                        cykli</span>
+                </div>
+                <div class="chart-container">
+                    <canvas id="widthChart"></canvas>
+                </div>
+                <div class="chart-stats">
+                    <div class="chart-stat">
+                        <div class="chart-stat-value max" id="chart-max">0</div>
+                        <div class="chart-stat-label">MAX (px)</div>
+                    </div>
+                    <div class="chart-stat">
+                        <div class="chart-stat-value min" id="chart-min">0</div>
+                        <div class="chart-stat-label">MIN (px)</div>
+                    </div>
+                    <div class="chart-stat">
+                        <div class="chart-stat-value avg" id="chart-avg">0</div>
+                        <div class="chart-stat-label">ŚREDNIA (px)</div>
+                    </div>
+                    <div class="chart-stat">
+                        <div class="chart-stat-value std" id="chart-trend">-</div>
+                        <div class="chart-stat-label">TREND</div>
+                    </div>
+                </div>
+            </section>
+        </div>
 
         <!-- Sidebar -->
         <aside class="sidebar">
@@ -393,11 +492,11 @@
                         </div>
                         <div class="stat-item">
                             <div class="stat-value" id="stat-avg-width">0</div>
-                            <div class="stat-label">Śr. Szerokość</div>
+                            <div class="stat-label">Śr. Max Szer.</div>
                         </div>
                         <div class="stat-item">
                             <div class="stat-value" id="stat-min-width">0</div>
-                            <div class="stat-label">Min. Szerokość</div>
+                            <div class="stat-label">Śr. Min Szer.</div>
                         </div>
                     </div>
                 </div>
@@ -428,7 +527,7 @@
                                 <th>ID</th>
                                 <th>Max</th>
                                 <th>Min</th>
-                                <th>Alerty</th>
+                                <th>Status</th>
                             </tr>
                         </thead>
                         <tbody id="cycles-tbody">
@@ -444,6 +543,148 @@
 
     <script>
         const API_BASE = window.location.origin;
+        let widthChart = null;
+        let allCycles = [];
+
+        // Initialize Chart
+        function initChart() {
+            const ctx = document.getElementById('widthChart').getContext('2d');
+            widthChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: 'Max Szerokość',
+                            data: [],
+                            borderColor: '#00ff88',
+                            backgroundColor: 'rgba(0, 255, 136, 0.1)',
+                            tension: 0.3,
+                            fill: false,
+                            pointRadius: 4,
+                            pointHoverRadius: 6
+                        },
+                        {
+                            label: 'Min Szerokość',
+                            data: [],
+                            borderColor: '#ff4444',
+                            backgroundColor: 'rgba(255, 68, 68, 0.1)',
+                            tension: 0.3,
+                            fill: false,
+                            pointRadius: 4,
+                            pointHoverRadius: 6
+                        },
+                        {
+                            label: 'Średnia Szerokość',
+                            data: [],
+                            borderColor: '#00d4ff',
+                            backgroundColor: 'rgba(0, 212, 255, 0.1)',
+                            tension: 0.3,
+                            fill: true,
+                            pointRadius: 3,
+                            pointHoverRadius: 5,
+                            borderDash: [5, 5]
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: {
+                                color: '#a0a0b0',
+                                usePointStyle: true,
+                                padding: 20
+                            }
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            backgroundColor: 'rgba(22, 33, 62, 0.95)',
+                            titleColor: '#00d4ff',
+                            bodyColor: '#fff',
+                            borderColor: '#00d4ff',
+                            borderWidth: 1
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.05)'
+                            },
+                            ticks: {
+                                color: '#a0a0b0'
+                            },
+                            title: {
+                                display: true,
+                                text: 'Cykl',
+                                color: '#a0a0b0'
+                            }
+                        },
+                        y: {
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.05)'
+                            },
+                            ticks: {
+                                color: '#a0a0b0'
+                            },
+                            title: {
+                                display: true,
+                                text: 'Szerokość (px)',
+                                color: '#a0a0b0'
+                            }
+                        }
+                    },
+                    interaction: {
+                        mode: 'nearest',
+                        axis: 'x',
+                        intersect: false
+                    }
+                }
+            });
+        }
+
+        // Update Chart with data
+        function updateChart(cycles) {
+            if (!widthChart || cycles.length === 0) return;
+
+            const labels = cycles.map(c => `#${c.cycle_id}`);
+            const maxWidths = cycles.map(c => c.max_width);
+            const minWidths = cycles.map(c => c.min_width);
+            const avgWidths = cycles.map(c => c.avg_width);
+
+            widthChart.data.labels = labels;
+            widthChart.data.datasets[0].data = maxWidths;
+            widthChart.data.datasets[1].data = minWidths;
+            widthChart.data.datasets[2].data = avgWidths;
+            widthChart.update();
+
+            // Update stats
+            const allMax = Math.max(...maxWidths);
+            const allMin = Math.min(...minWidths.filter(m => m > 0));
+            const allAvg = avgWidths.reduce((a, b) => a + b, 0) / avgWidths.length;
+
+            document.getElementById('chart-max').textContent = allMax.toFixed(1);
+            document.getElementById('chart-min').textContent = allMin.toFixed(1);
+            document.getElementById('chart-avg').textContent = allAvg.toFixed(1);
+
+            // Calculate trend
+            if (avgWidths.length >= 2) {
+                const lastTwo = avgWidths.slice(-2);
+                const diff = lastTwo[1] - lastTwo[0];
+                if (diff > 5) {
+                    document.getElementById('chart-trend').textContent = '↗️ Rośnie';
+                } else if (diff < -5) {
+                    document.getElementById('chart-trend').textContent = '↘️ Maleje';
+                } else {
+                    document.getElementById('chart-trend').textContent = '→ Stabilny';
+                }
+            }
+
+            document.getElementById('chart-info').textContent = `Dane z ${cycles.length} cykli`;
+        }
 
         // Fetch videos list
         async function fetchVideos() {
@@ -451,7 +692,7 @@
                 const res = await fetch(`${API_BASE}/api/videos`);
                 const videos = await res.json();
                 const select = document.getElementById('video-select');
-                
+
                 videos.forEach(v => {
                     const option = document.createElement('option');
                     option.value = v.filename;
@@ -467,16 +708,16 @@
         function loadVideo() {
             const select = document.getElementById('video-select');
             const filename = select.value;
-            
+
             if (!filename) {
                 alert('Wybierz nagranie');
                 return;
             }
-            
+
             const video = document.getElementById('video-player');
             video.src = `${API_BASE}/api/video/${filename}`;
             video.load();
-            
+
             document.getElementById('video-info').textContent = filename;
         }
 
@@ -485,7 +726,7 @@
             try {
                 const res = await fetch(`${API_BASE}/api/stats`);
                 const stats = await res.json();
-                
+
                 document.getElementById('stat-cycles').textContent = stats.total_cycles || 0;
                 document.getElementById('stat-alerts').textContent = stats.total_alerts || 0;
                 document.getElementById('stat-avg-width').textContent = stats.avg_max_width || 0;
@@ -498,24 +739,30 @@
         // Fetch cycles
         async function fetchCycles() {
             try {
-                const res = await fetch(`${API_BASE}/api/cycles?limit=10`);
+                const res = await fetch(`${API_BASE}/api/cycles?limit=50`);
                 const cycles = await res.json();
-                
+                allCycles = cycles;
+
                 const tbody = document.getElementById('cycles-tbody');
                 tbody.innerHTML = '';
-                
+
                 if (cycles.length === 0) {
                     tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-secondary);">Brak danych</td></tr>';
                     return;
                 }
-                
-                cycles.slice().reverse().forEach(c => {
+
+                // Update chart
+                updateChart(cycles);
+
+                // Update table (last 10)
+                cycles.slice(-10).reverse().forEach(c => {
                     const tr = document.createElement('tr');
+                    const hasAlerts = c.alerts && c.alerts.length > 0;
                     tr.innerHTML = `
                         <td>#${c.cycle_id}</td>
-                        <td>${c.max_width}</td>
-                        <td>${c.min_width}</td>
-                        <td>${c.alerts.length > 0 ? '⚠️' : '✅'}</td>
+                        <td>${c.max_width.toFixed(1)}</td>
+                        <td>${c.min_width.toFixed(1)}</td>
+                        <td>${hasAlerts ? '⚠️' : '✅'}</td>
                     `;
                     tbody.appendChild(tr);
                 });
@@ -529,15 +776,15 @@
             try {
                 const res = await fetch(`${API_BASE}/api/alerts`);
                 const alerts = await res.json();
-                
+
                 const list = document.getElementById('alerts-list');
                 document.getElementById('alerts-count').textContent = `${alerts.length} alertów`;
-                
+
                 if (alerts.length === 0) {
                     list.innerHTML = '<div class="empty-state">Brak alertów</div>';
                     return;
                 }
-                
+
                 list.innerHTML = '';
                 alerts.slice(-10).reverse().forEach(a => {
                     const div = document.createElement('div');
@@ -568,12 +815,14 @@
 
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
+            initChart();
             fetchVideos();
             refreshData();
-            
-            // Auto-refresh every 10 seconds
-            setInterval(refreshData, 10000);
+
+            // Auto-refresh every 5 seconds
+            setInterval(refreshData, 5000);
         });
     </script>
 </body>
+
 </html>

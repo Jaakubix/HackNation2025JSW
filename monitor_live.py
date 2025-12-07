@@ -82,15 +82,62 @@ class FilterState:
         return cv2.cvtColor(soft_filtered, cv2.COLOR_GRAY2BGR)
 
 
-def draw_detections(img, boxes, scores, labels, color, label_map):
-    """Rysuje detekcje na obrazie."""
+def draw_detections_polygon(img, boxes, scores, labels, color, label_map, is_belt=False):
+    """
+    Rysuje detekcje na obrazie używając wielokątów.
+    Dla taśmy używamy trapezu żeby lepiej oddać perspektywę.
+    """
     for box, score, label in zip(boxes, scores, labels):
         x1, y1, x2, y2 = box.int().tolist()
-        cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
+        
+        if is_belt:
+            # Dla taśmy - rysuj trapez (perspektywa)
+            # Górna krawędź węższa, dolna szersza (lub odwrotnie)
+            margin = int((x2 - x1) * 0.05)  # 5% margines
+            
+            # Punkty wielokąta (trapez)
+            pts = np.array([
+                [x1 + margin, y1],      # Lewy górny
+                [x2 - margin, y1],      # Prawy górny
+                [x2, y2],               # Prawy dolny
+                [x1, y2]                # Lewy dolny
+            ], np.int32)
+            
+            # Rysuj wypełniony wielokąt z przezroczystością
+            overlay = img.copy()
+            cv2.fillPoly(overlay, [pts], color)
+            cv2.addWeighted(overlay, 0.2, img, 0.8, 0, img)
+            
+            # Rysuj kontur wielokąta
+            cv2.polylines(img, [pts], True, color, 2)
+            
+            # Pomiar szerokości - linia w środku
+            mid_y = (y1 + y2) // 2
+            cv2.line(img, (x1, mid_y), (x2, mid_y), (255, 255, 0), 1)
+            
+            width = x2 - x1
+            cv2.putText(img, f"Szer: {width}px", (x1 + 5, mid_y - 5),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+        else:
+            # Dla szwów - prostokąt z zaokrąglonymi rogami (symulacja)
+            cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
+        
+        # Etykieta
         label_name = label_map.get(label.item(), str(label.item()))
         text = f"{label_name}: {score:.2f}"
-        cv2.putText(img, text, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+        
+        # Tło dla tekstu
+        (text_w, text_h), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
+        cv2.rectangle(img, (x1, y1 - text_h - 8), (x1 + text_w + 4, y1), color, -1)
+        cv2.putText(img, text, (x1 + 2, y1 - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
+    
     return img
+
+
+def draw_detections(img, boxes, scores, labels, color, label_map):
+    """Wrapper dla kompatybilności - używa wielokątów dla taśmy."""
+    is_belt = "Tasma" in label_map.values() or "tasma" in label_map.values()
+    return draw_detections_polygon(img, boxes, scores, labels, color, label_map, is_belt)
 
 
 def draw_status(frame, monitor: BeltMonitor, alerts_text: str = ""):

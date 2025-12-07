@@ -21,26 +21,103 @@ def load_model(model_path, num_classes, device):
     model.eval()
     return model
 
+
+
+def draw_detections(img, boxes, scores, labels, color, label_map, masks=None):
+    """Draw detections:
+    - For tape (class 1): use model mask if available (with low threshold for larger area).
+    - Fallback to trapezoid if mask fails.
+    - Rectangle for other classes.
+    """
+    h_img, w_img = img.shape[:2]
+    for idx, (box, score, label) in enumerate(zip(boxes, scores, labels)):
+        x1, y1, x2, y2 = box.int().tolist()
+        # Clamp coordinates
+        x1 = max(0, min(x1, w_img - 1))
+        x2 = max(0, min(x2, w_img - 1))
+        y1 = max(0, min(y1, h_img - 1))
+        y2 = max(0, min(y2, h_img - 1))
+        
+        is_tape = (label.item() == 1)
+        if is_tape and masks is not None and idx < len(masks):
+            # Use model mask
+            mask_prob = masks[idx][0].cpu().numpy()
+            # Low threshold (0.3) to include more pixels -> "larger"
+            mask_binary = (mask_prob > 0.3).astype('uint8') * 255
+            
+            # Dilate to make it slightly larger/smoother
+            kernel = np.ones((5,5), np.uint8)
+            mask_binary = cv2.dilate(mask_binary, kernel, iterations=1)
+            
+            contours, _ = cv2.findContours(mask_binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            
+            if contours:
+                cnt = max(contours, key=cv2.contourArea)
+                # Approx polygon
+                epsilon = 0.01 * cv2.arcLength(cnt, True)
+                approx = cv2.approxPolyDP(cnt, epsilon, True)
+                
+                if len(approx) > 8:
+                    approx = cv2.convexHull(approx)
+                    epsilon = 0.01 * cv2.arcLength(approx, True)
+                    approx = cv2.approxPolyDP(approx, epsilon, True)
+
+                overlay = img.copy()
+                cv2.fillPoly(overlay, [approx], color)
+                cv2.addWeighted(overlay, 0.2, img, 0.8, 0, img)
+                cv2.polylines(img, [approx], True, color, 2)
+                
+                cx, cy, cw, ch = cv2.boundingRect(approx)
+                mid_y = cy + ch // 2
+                cv2.line(img, (cx, mid_y), (cx + cw, mid_y), (255, 255, 0), 1)
+                cv2.putText(img, f"Szer: {cw}px", (cx, mid_y - 5),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+                continue
+
+        if is_tape:
+            # Fallback trapezoid (no margin = full width)
+            width = max(1, x2 - x1)
+            margin = 0 # Full width as requested "larger"
+            pts = np.array([
+                [x1 + margin, y1],
+                [x2 - margin, y1],
+                [x2, y2],
+                [x1, y2]
+            ], np.int32)
+            pts[:, 0] = np.clip(pts[:, 0], 0, w_img - 1)
+            pts[:, 1] = np.clip(pts[:, 1], 0, h_img - 1)
+            overlay = img.copy()
+            cv2.fillPoly(overlay, [pts], color)
+            cv2.addWeighted(overlay, 0.2, img, 0.8, 0, img)
+            cv2.polylines(img, [pts], True, color, 2)
+            mid_y = (y1 + y2) // 2
+            cv2.line(img, (x1, mid_y), (x2, mid_y), (255, 255, 0), 1)
+            cv2.putText(img, f"Szer: {width}px", (x1 + 5, mid_y - 5),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+        else:
+            cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
+        
+        # label background and text
+        label_name = label_map.get(label.item(), str(label.item()))
+        text = f"{label_name}: {score:.2f}"
+        (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
+        cv2.rectangle(img, (x1, y1 - th - 8), (x1 + tw + 4, y1), color, -1)
+        cv2.putText(img, text, (x1 + 2, y1 - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
+    return img
+
 def get_prediction(model, img_tensor, threshold=0.5):
     with torch.no_grad():
         outputs = model([img_tensor])
-    
     output = outputs[0]
     boxes = output['boxes']
     scores = output['scores']
     labels = output['labels']
-    
+    masks = output.get('masks')
     keep = scores >= threshold
-    return boxes[keep], scores[keep], labels[keep]
+    if masks is not None:
+        masks = masks[keep]
+    return boxes[keep], scores[keep], labels[keep], masks
 
-def draw_detections(img, boxes, scores, labels, color, label_map):
-    for box, score, label in zip(boxes, scores, labels):
-        x1, y1, x2, y2 = box.int().tolist()
-        cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
-        label_name = label_map.get(label.item(), str(label.item()))
-        text = f"{label_name}: {score:.2f}"
-        cv2.putText(img, text, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
-    return img
 
 class FilterState:
     def __init__(self):
@@ -108,19 +185,19 @@ def main():
         
         # 1. Tape Inference (Original Frame)
         img_tensor = F.to_tensor(frame).to(device)
-        tape_boxes, tape_scores, tape_labels = get_prediction(tape_model, img_tensor)
+        tape_boxes, tape_scores, tape_labels, tape_masks = get_prediction(tape_model, img_tensor)
         
         # 2. Seam Inference (Filtered Frame)
         filtered_frame = filter_state.process(frame)
         filtered_tensor = F.to_tensor(filtered_frame).to(device)
-        seam_boxes, seam_scores, seam_labels = get_prediction(seam_model, filtered_tensor)
+        seam_boxes, seam_scores, seam_labels, seam_masks = get_prediction(seam_model, filtered_tensor)
         
         # 3. Draw Results
-        # Draw Tape (Green)
-        frame = draw_detections(frame, tape_boxes, tape_scores, tape_labels, (0, 255, 0), {1: "Tasma"})
+# Draw Tape (Green)
+        frame = draw_detections(frame, tape_boxes, tape_scores, tape_labels, (0, 255, 0), {1: "Tasma"}, tape_masks)
         
         # Draw Seam (Red)
-        frame = draw_detections(frame, seam_boxes, seam_scores, seam_labels, (0, 0, 255), {1: "Szew"})
+        frame = draw_detections(frame, seam_boxes, seam_scores, seam_labels, (0, 0, 255), {1: "Szew"}, seam_masks)
         
         # Optional: Show filtered frame in corner?
         # small_filtered = cv2.resize(filtered_frame, (w//4, h//4))
