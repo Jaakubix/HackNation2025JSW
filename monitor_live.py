@@ -48,9 +48,12 @@ def get_prediction(model, img_tensor, threshold=0.5):
     boxes = output['boxes']
     scores = output['scores']
     labels = output['labels']
+    masks = output.get('masks')
     
     keep = scores >= threshold
-    return boxes[keep], scores[keep], labels[keep]
+    if masks is not None:
+        masks = masks[keep]
+    return boxes[keep], scores[keep], labels[keep], masks
 
 
 class FilterState:
@@ -82,62 +85,111 @@ class FilterState:
         return cv2.cvtColor(soft_filtered, cv2.COLOR_GRAY2BGR)
 
 
-def draw_detections_polygon(img, boxes, scores, labels, color, label_map, is_belt=False):
+def draw_detections(img, boxes, scores, labels, color, label_map, masks=None):
+    """Draw detections:
+    - For tape (class 1): use model mask if available (with low threshold for larger area).
+    - Fallback to trapezoid if mask fails.
+    - Rectangle for other classes.
     """
-    Rysuje detekcje na obrazie używając wielokątów.
-    Dla taśmy używamy trapezu żeby lepiej oddać perspektywę.
-    """
-    for box, score, label in zip(boxes, scores, labels):
+    h_img, w_img = img.shape[:2]
+    for idx, (box, score, label) in enumerate(zip(boxes, scores, labels)):
         x1, y1, x2, y2 = box.int().tolist()
+        # Clamp coordinates
+        x1 = max(0, min(x1, w_img - 1))
+        x2 = max(0, min(x2, w_img - 1))
+        y1 = max(0, min(y1, h_img - 1))
+        y2 = max(0, min(y2, h_img - 1))
         
-        if is_belt:
-            # Dla taśmy - rysuj trapez (perspektywa)
-            # Górna krawędź węższa, dolna szersza (lub odwrotnie)
-            margin = int((x2 - x1) * 0.05)  # 5% margines
+        is_tape = (label.item() == 1)
+        polygon_to_draw = None
+        
+        if is_tape and masks is not None and idx < len(masks):
+            # Use model mask
+            mask_prob = masks[idx][0].cpu().numpy()
+            # Low threshold (0.3) to include more pixels -> "larger"
+            mask_binary = (mask_prob > 0.3).astype('uint8') * 255
             
-            # Punkty wielokąta (trapez)
+            # Dilate to make it slightly larger/smoother
+            kernel = np.ones((5,5), np.uint8)
+            mask_binary = cv2.dilate(mask_binary, kernel, iterations=1)
+            
+            contours, _ = cv2.findContours(mask_binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            
+            if contours:
+                cnt = max(contours, key=cv2.contourArea)
+                # Approx polygon
+                epsilon = 0.01 * cv2.arcLength(cnt, True)
+                approx = cv2.approxPolyDP(cnt, epsilon, True)
+                
+                if len(approx) > 8:
+                    approx = cv2.convexHull(approx)
+                    epsilon = 0.01 * cv2.arcLength(approx, True)
+                    approx = cv2.approxPolyDP(approx, epsilon, True)
+                
+                polygon_to_draw = approx
+
+        if is_tape and polygon_to_draw is None:
+            # Fallback trapezoid (no margin = full width)
+            width = max(1, x2 - x1)
+            margin = 0 # Full width as requested "larger"
             pts = np.array([
-                [x1 + margin, y1],      # Lewy górny
-                [x2 - margin, y1],      # Prawy górny
-                [x2, y2],               # Prawy dolny
-                [x1, y2]                # Lewy dolny
+                [x1 + margin, y1],
+                [x2 - margin, y1],
+                [x2, y2],
+                [x1, y2]
             ], np.int32)
-            
-            # Rysuj wypełniony wielokąt z przezroczystością
+            pts[:, 0] = np.clip(pts[:, 0], 0, w_img - 1)
+            pts[:, 1] = np.clip(pts[:, 1], 0, h_img - 1)
+            polygon_to_draw = pts
+
+        if is_tape and polygon_to_draw is not None:
+            # Draw polygon
             overlay = img.copy()
-            cv2.fillPoly(overlay, [pts], color)
+            cv2.fillPoly(overlay, [polygon_to_draw], color)
             cv2.addWeighted(overlay, 0.2, img, 0.8, 0, img)
+            cv2.polylines(img, [polygon_to_draw], True, color, 2)
             
-            # Rysuj kontur wielokąta
-            cv2.polylines(img, [pts], True, color, 2)
-            
-            # Pomiar szerokości - linia w środku
+            # Calculate width line intersection
             mid_y = (y1 + y2) // 2
-            cv2.line(img, (x1, mid_y), (x2, mid_y), (255, 255, 0), 1)
+            poly_pts = polygon_to_draw.reshape(-1, 2)
+            intersections = []
+            for i in range(len(poly_pts)):
+                p1 = poly_pts[i]
+                p2 = poly_pts[(i + 1) % len(poly_pts)]
+                if (p1[1] <= mid_y < p2[1]) or (p2[1] <= mid_y < p1[1]):
+                    if p2[1] != p1[1]:
+                        x = p1[0] + (mid_y - p1[1]) * (p2[0] - p1[0]) / (p2[1] - p1[1])
+                        intersections.append(int(x))
             
-            width = x2 - x1
-            cv2.putText(img, f"Szer: {width}px", (x1 + 5, mid_y - 5),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
-        else:
-            # Dla szwów - prostokąt z zaokrąglonymi rogami (symulacja)
+            if len(intersections) >= 2:
+                start_x = min(intersections)
+                end_x = max(intersections)
+                width_px = end_x - start_x
+                
+                # Draw line inside
+                cv2.line(img, (start_x, mid_y), (end_x, mid_y), (255, 255, 0), 1)
+                
+                # Text above-left
+                cv2.putText(img, f"Szer: {width_px}px", (start_x, mid_y - 5),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+            else:
+                # Fallback if intersection fails (e.g. horizontal edge at mid_y)
+                cx, cy, cw, ch = cv2.boundingRect(polygon_to_draw)
+                mid_y = cy + ch // 2
+                cv2.line(img, (cx, mid_y), (cx + cw, mid_y), (255, 255, 0), 1)
+                cv2.putText(img, f"Szer: {cw}px", (cx, mid_y - 5),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+
+        elif not is_tape:
             cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
         
-        # Etykieta
+        # label background and text
         label_name = label_map.get(label.item(), str(label.item()))
         text = f"{label_name}: {score:.2f}"
-        
-        # Tło dla tekstu
-        (text_w, text_h), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
-        cv2.rectangle(img, (x1, y1 - text_h - 8), (x1 + text_w + 4, y1), color, -1)
+        (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
+        cv2.rectangle(img, (x1, y1 - th - 8), (x1 + tw + 4, y1), color, -1)
         cv2.putText(img, text, (x1 + 2, y1 - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
-    
     return img
-
-
-def draw_detections(img, boxes, scores, labels, color, label_map):
-    """Wrapper dla kompatybilności - używa wielokątów dla taśmy."""
-    is_belt = "Tasma" in label_map.values() or "tasma" in label_map.values()
-    return draw_detections_polygon(img, boxes, scores, labels, color, label_map, is_belt)
 
 
 def draw_status(frame, monitor: BeltMonitor, alerts_text: str = ""):
@@ -179,7 +231,9 @@ def run_monitoring(
     output_video: Optional[str] = None,
     show_preview: bool = True,
     tape_model_path: str = "finetuned_models/tape_model.pth",
-    seam_model_path: str = "finetuned_models/seam_model.pth"
+    seam_model_path: str = "finetuned_models/seam_model.pth",
+    seams_per_cycle: int = 1,
+    progress_callback: Optional[callable] = None
 ):
     """
     Główna funkcja monitorowania.
@@ -191,6 +245,8 @@ def run_monitoring(
         show_preview: Czy pokazywać podgląd
         tape_model_path: Ścieżka do modelu taśmy
         seam_model_path: Ścieżka do modelu szwów
+        seams_per_cycle: Liczba szwów na cykl
+        progress_callback: Funkcja wywoływana z postępem (current_frame, total_frames)
     """
     device = selectDevice()
     
@@ -211,7 +267,7 @@ def run_monitoring(
         seam_model = load_model(seam_model_path, num_classes=2, device=device)
     
     # Inicjalizacja monitora
-    monitor = BeltMonitor(csv_path=csv_path)
+    monitor = BeltMonitor(csv_path=csv_path, seams_per_cycle=seams_per_cycle)
     filter_state = FilterState()
     
     # Otwórz źródło wideo
@@ -242,7 +298,15 @@ def run_monitoring(
         out = cv2.VideoWriter(output_video, fourcc, fps, (w, h))
         print(f"Zapis wideo do: {output_video}")
     
+    # Determine total frames for progress callback
+    is_file_source = not (source.startswith("rtsp") or source.startswith("/dev"))
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) if is_file_source else 0
+
     monitor.is_running = True
+    print(f"Rozpoczynam monitorowanie. Źródło: {source}")
+    print(f"Całkowita liczba klatek: {total_frames}")
+    
+    frame_count = 0
     last_alert_text = ""
     alert_display_frames = 0
     
@@ -252,7 +316,7 @@ def run_monitoring(
             
             if not ret:
                 # Dla plików wideo - koniec
-                if not source.startswith("rtsp") and not source.startswith("/dev"):
+                if is_file_source:
                     print("\nKoniec pliku wideo.")
                     break
                 
@@ -266,22 +330,24 @@ def run_monitoring(
             # Detekcja taśmy
             if tape_model:
                 img_tensor = F.to_tensor(frame).to(device)
-                tape_boxes, tape_scores, tape_labels = get_prediction(tape_model, img_tensor)
+                tape_boxes, tape_scores, tape_labels, tape_masks = get_prediction(tape_model, img_tensor)
             else:
                 # Tryb demo - symuluj detekcję
                 tape_boxes = torch.tensor([[100, 100, w-100, h-100]])
                 tape_scores = torch.tensor([0.9])
                 tape_labels = torch.tensor([1])
+                tape_masks = None
             
             # Detekcja szwów
             if seam_model:
                 filtered_frame = filter_state.process(frame)
                 filtered_tensor = F.to_tensor(filtered_frame).to(device)
-                seam_boxes, seam_scores, seam_labels = get_prediction(seam_model, filtered_tensor)
+                seam_boxes, seam_scores, seam_labels, seam_masks = get_prediction(seam_model, filtered_tensor)
             else:
                 seam_boxes = torch.tensor([])
                 seam_scores = torch.tensor([])
                 seam_labels = torch.tensor([])
+                seam_masks = None
             
             # Przetwórz przez monitor
             cycle_data, alerts = monitor.process_frame(
@@ -324,10 +390,10 @@ def run_monitoring(
             # Rysowanie na klatce
             if tape_model:
                 frame = draw_detections(frame, tape_boxes, tape_scores, tape_labels, 
-                                       (0, 255, 0), {1: "Tasma"})
+                                       (0, 255, 0), {1: "Tasma"}, tape_masks)
             if seam_model:
                 frame = draw_detections(frame, seam_boxes, seam_scores, seam_labels, 
-                                       (0, 0, 255), {1: "Szew"})
+                                       (0, 0, 255), {1: "Szew"}, seam_masks)
             
             frame = draw_status(frame, monitor, last_alert_text)
             
@@ -406,6 +472,12 @@ def main():
         default="finetuned_models/seam_model.pth",
         help="Ścieżka do modelu szwów"
     )
+    parser.add_argument(
+        "--seams",
+        type=int,
+        default=1,
+        help="Liczba szwów na cykl (domyślnie: 1)"
+    )
     
     args = parser.parse_args()
     
@@ -415,7 +487,8 @@ def main():
         output_video=args.output,
         show_preview=not args.no_preview,
         tape_model_path=args.tape_model,
-        seam_model_path=args.seam_model
+        seam_model_path=args.seam_model,
+        seams_per_cycle=args.seams
     )
 
 

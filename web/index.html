@@ -475,6 +475,48 @@
 
         <!-- Sidebar -->
         <aside class="sidebar">
+            <!-- Upload Card -->
+            <div class="card">
+                <div class="card-header">
+                    <h3>📤 Wgraj Nagranie</h3>
+                </div>
+                <div class="card-content">
+                    <div style="display: flex; flex-direction: column; gap: 12px;">
+                        <div>
+                            <label
+                                style="font-size: 0.8rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Plik
+                                wideo</label>
+                            <input type="file" id="upload-file" accept="video/*"
+                                style="width: 100%; font-size: 0.8rem; color: var(--text-secondary);">
+                        </div>
+                        <div>
+                            <label
+                                style="font-size: 0.8rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Liczba
+                                szwów (n)</label>
+                            <input type="number" id="upload-seams" value="1" min="1"
+                                style="width: 100%; padding: 8px; background: var(--bg-secondary); border: 1px solid var(--border); color: white; border-radius: 6px;">
+                        </div>
+                        <button onclick="uploadVideo()" id="upload-btn"
+                            class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition-colors flex justify-center items-center">
+                            <span>Wgraj i Przetwórz</span>
+                        </button>
+
+                        <!-- Progress Bar -->
+                        <div id="progress-container" class="mt-4 hidden">
+                            <div class="flex justify-between text-sm text-gray-400 mb-1">
+                                <span>Przetwarzanie...</span>
+                                <span id="progress-text">0%</span>
+                            </div>
+                            <div class="w-full bg-gray-700 rounded-full h-2.5">
+                                <div id="progress-bar" class="bg-blue-600 h-2.5 rounded-full" style="width: 0%"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="upload-status" style="font-size: 0.8rem; text-align: center; min-height: 20px;"></div>
+                </div>
+            </div>
+            </div>
+
             <!-- Stats Card -->
             <div class="card">
                 <div class="card-header">
@@ -801,7 +843,72 @@
             }
         }
 
-        // Download CSV
+        // Upload Video
+        async function uploadVideo() {
+            const fileInput = document.getElementById('upload-file');
+            const seamsInput = document.getElementById('upload-seams');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                alert('Wybierz plik wideo!');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('seams', seamsInput.value);
+
+            const btn = document.getElementById('upload-btn');
+            const originalText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = `
+                <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Wgrywanie...
+            `;
+
+            try {
+                const res = await fetch(`${API_BASE}/api/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    // Start polling progress
+                    startProgressPolling(file.name, btn, originalText);
+                } else {
+                    alert('Błąd wgrywania pliku');
+                    resetUploadButton(btn, originalText);
+                }
+            } catch (e) {
+                console.error('Upload error:', e);
+            }
+        }
+
+        // Download specific report for current video
+        function downloadReport() {
+            if (!currentVideo) {
+                alert('Wybierz najpierw wideo!');
+                return;
+            }
+            // If currentVideo is processed_..., strip prefix to get original filename
+            let filename = currentVideo;
+            if (filename.startsWith('processed_')) {
+                filename = filename.replace('processed_', '');
+            }
+
+            const link = document.createElement('a');
+            link.href = `/api/report/${filename}`;
+            link.download = `report_${filename}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // Download global CSV
         function downloadCSV() {
             window.location.href = `${API_BASE}/api/csv/download`;
         }

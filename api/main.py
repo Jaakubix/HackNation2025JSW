@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import List, Optional
 from datetime import datetime
 
-from fastapi import FastAPI, HTTPException, Query, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, UploadFile, File, Form
 from fastapi.responses import FileResponse, StreamingResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from csv_logger import CSVLogger
 from alert_system import AlertGenerator, AlertThresholds
+from monitor_live import run_monitoring
 
 app = FastAPI(
     title="Belt Monitoring API",
@@ -46,10 +47,77 @@ app.add_middleware(
 BASE_DIR = Path(__file__).parent.parent
 OUTPUT_DIR = BASE_DIR / "output"
 VIDEO_DIR = BASE_DIR
+PROCESSED_DIR = BASE_DIR / "processed_videos"
+
+# Ensure processed directory exists
+PROCESSED_DIR.mkdir(exist_ok=True)
+
+# Global progress state
+# Format: { "filename": percentage (int 0-100) }
+processing_progress = {}
 
 # Inicjalizacja komponentów
 csv_logger = CSVLogger(str(OUTPUT_DIR / "cycles.csv"))
 alert_generator = AlertGenerator()
+    
+def process_video_task(video_path: str, seams: int):
+    """
+    Background task to process the uploaded video.
+    """
+    print(f"Starting background processing for {video_path} with seams={seams}")
+    input_path = Path(video_path)
+    filename = input_path.name
+    
+    # Initialize progress
+    processing_progress[filename] = 0
+    
+    def update_progress(current, total):
+        if total > 0:
+            percent = int((current / total) * 100)
+            # Update only if changed to reduce overhead
+            if percent != processing_progress.get(filename):
+                processing_progress[filename] = percent
+    
+    try:
+        # Generate output filename (e.g., processed_filename.mp4)
+        output_filename = f"processed_{input_path.name}"
+        output_path = PROCESSED_DIR / output_filename
+        temp_output_path = PROCESSED_DIR / f"temp_{output_filename}"
+        
+        # Generate output CSV filename
+        csv_filename = f"processed_{input_path.stem}.csv"
+        output_csv_path = PROCESSED_DIR / csv_filename
+        
+        # Run monitoring (generates mpeg4 video)
+        run_monitoring(
+            source=video_path,
+            csv_path=str(output_csv_path),
+            output_video=str(temp_output_path),
+            show_preview=False, # No preview for background task
+            seams_per_cycle=seams,
+            progress_callback=update_progress
+        )
+        
+        # Convert to H.264 for web compatibility
+        import subprocess
+        print(f"Converting {temp_output_path} to H.264...")
+        subprocess.run([
+            "ffmpeg", "-y", "-i", str(temp_output_path),
+            "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+            "-c:a", "aac", "-b:a", "128k",
+            str(output_path)
+        ], check=True)
+        
+        # Remove temp file
+        if temp_output_path.exists():
+            temp_output_path.unlink()
+            
+        # Mark as complete
+        processing_progress[filename] = 100
+            
+        print(f"Finished processing {video_path}. Output saved to {output_path}, CSV to {output_csv_path}")
+    except Exception as e:
+        print(f"Error processing video: {e}")
 
 
 # ============== MODELE PYDANTIC ==============
@@ -207,15 +275,30 @@ async def download_csv():
     )
 
 
+@app.get("/api/progress/{filename}")
+async def get_progress(filename: str):
+    """Get processing progress for a file."""
+    progress = processing_progress.get(filename)
+    if progress is None:
+        # If file exists in processed dir, assume 100%
+        if (PROCESSED_DIR / f"processed_{filename}").exists():
+            return {"progress": 100, "status": "completed"}
+        return {"progress": 0, "status": "not_found"}
+    
+    status = "processing" if progress < 100 else "completed"
+    return {"progress": progress, "status": status}
+
+
 @app.get("/api/videos")
 async def list_videos():
-    """Pobierz listę dostępnych nagrań wideo."""
+    """Pobierz listę dostępnych nagrań wideo (tylko przetworzone)."""
     video_extensions = {'.mp4', '.mkv', '.avi', '.mov'}
     videos = []
     
-    for ext in video_extensions:
-        for video_file in VIDEO_DIR.glob(f"*{ext}"):
-            if video_file.is_file():
+    # Scan processed videos directory
+    if PROCESSED_DIR.exists():
+        for video_file in PROCESSED_DIR.glob("*"):
+            if video_file.suffix in video_extensions and video_file.is_file():
                 stat = video_file.stat()
                 videos.append({
                     'filename': video_file.name,
@@ -233,8 +316,13 @@ async def stream_video(filename: str):
     
     Obsługuje formaty: mp4, mkv, avi, mov
     """
-    video_path = VIDEO_DIR / filename
+    # Check processed dir first
+    video_path = PROCESSED_DIR / filename
     
+    if not video_path.exists():
+        # Fallback to root for original files (if needed for debugging)
+        video_path = VIDEO_DIR / filename
+        
     if not video_path.exists():
         raise HTTPException(status_code=404, detail=f"Wideo {filename} nie znalezione")
     
@@ -306,6 +394,51 @@ async def get_statistics():
         "first_cycle_time": cycles[0]['timestamp'] if cycles else None,
         "last_cycle_time": cycles[-1]['timestamp'] if cycles else None
     }
+
+
+@app.post("/api/upload")
+async def upload_video(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    seams: int = Form(...)
+):
+    """Wgraj wideo do analizy."""
+    # Save original to root (or separate uploads dir)
+    file_path = VIDEO_DIR / file.filename
+    with open(file_path, "wb") as buffer:
+        content = await file.read()
+        buffer.write(content)
+    
+    # Start background processing
+    background_tasks.add_task(process_video_task, str(file_path), seams)
+    
+    return {
+        "filename": file.filename,
+        "message": "File uploaded and processing started",
+        "seams_configured": seams
+    }
+
+
+@app.get("/api/report/{filename}")
+async def get_report(filename: str):
+    """
+    Get CSV report for a specific processed video.
+    Filename should be the processed filename (e.g. processed_video.mp4) or original?
+    Let's stick to the logic: user selects processed video from list.
+    """
+    # Filename comes from the video list, so it is "processed_...mp4"
+    input_path = PROCESSED_DIR / filename
+    csv_filename = f"{input_path.stem}.csv"
+    csv_path = PROCESSED_DIR / csv_filename
+    
+    if not csv_path.exists():
+        raise HTTPException(status_code=404, detail="Report not found")
+        
+    return FileResponse(
+        path=str(csv_path),
+        media_type="text/csv",
+        filename=csv_filename
+    )
 
 
 # Mount static files for web client
