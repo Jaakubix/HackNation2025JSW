@@ -23,6 +23,21 @@ def load_model(model_path, num_classes, device):
 
 
 
+
+
+def get_prediction(model, img_tensor, threshold=0.5):
+    with torch.no_grad():
+        outputs = model([img_tensor])
+    output = outputs[0]
+    boxes = output['boxes']
+    scores = output['scores']
+    labels = output['labels']
+    masks = output.get('masks')
+    keep = scores >= threshold
+    if masks is not None:
+        masks = masks[keep]
+    return boxes[keep], scores[keep], labels[keep], masks
+
 def draw_detections(img, boxes, scores, labels, color, label_map, masks=None):
     """Draw detections:
     - For tape (class 1): use model mask if available (with low threshold for larger area).
@@ -39,6 +54,8 @@ def draw_detections(img, boxes, scores, labels, color, label_map, masks=None):
         y2 = max(0, min(y2, h_img - 1))
         
         is_tape = (label.item() == 1)
+        polygon_to_draw = None
+        
         if is_tape and masks is not None and idx < len(masks):
             # Use model mask
             mask_prob = masks[idx][0].cpu().numpy()
@@ -61,20 +78,10 @@ def draw_detections(img, boxes, scores, labels, color, label_map, masks=None):
                     approx = cv2.convexHull(approx)
                     epsilon = 0.01 * cv2.arcLength(approx, True)
                     approx = cv2.approxPolyDP(approx, epsilon, True)
-
-                overlay = img.copy()
-                cv2.fillPoly(overlay, [approx], color)
-                cv2.addWeighted(overlay, 0.2, img, 0.8, 0, img)
-                cv2.polylines(img, [approx], True, color, 2)
                 
-                cx, cy, cw, ch = cv2.boundingRect(approx)
-                mid_y = cy + ch // 2
-                cv2.line(img, (cx, mid_y), (cx + cw, mid_y), (255, 255, 0), 1)
-                cv2.putText(img, f"Szer: {cw}px", (cx, mid_y - 5),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
-                continue
+                polygon_to_draw = approx
 
-        if is_tape:
+        if is_tape and polygon_to_draw is None:
             # Fallback trapezoid (no margin = full width)
             width = max(1, x2 - x1)
             margin = 0 # Full width as requested "larger"
@@ -86,15 +93,47 @@ def draw_detections(img, boxes, scores, labels, color, label_map, masks=None):
             ], np.int32)
             pts[:, 0] = np.clip(pts[:, 0], 0, w_img - 1)
             pts[:, 1] = np.clip(pts[:, 1], 0, h_img - 1)
+            polygon_to_draw = pts
+
+        if is_tape and polygon_to_draw is not None:
+            # Draw polygon
             overlay = img.copy()
-            cv2.fillPoly(overlay, [pts], color)
+            cv2.fillPoly(overlay, [polygon_to_draw], color)
             cv2.addWeighted(overlay, 0.2, img, 0.8, 0, img)
-            cv2.polylines(img, [pts], True, color, 2)
+            cv2.polylines(img, [polygon_to_draw], True, color, 2)
+            
+            # Calculate width line intersection
             mid_y = (y1 + y2) // 2
-            cv2.line(img, (x1, mid_y), (x2, mid_y), (255, 255, 0), 1)
-            cv2.putText(img, f"Szer: {width}px", (x1 + 5, mid_y - 5),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
-        else:
+            poly_pts = polygon_to_draw.reshape(-1, 2)
+            intersections = []
+            for i in range(len(poly_pts)):
+                p1 = poly_pts[i]
+                p2 = poly_pts[(i + 1) % len(poly_pts)]
+                if (p1[1] <= mid_y < p2[1]) or (p2[1] <= mid_y < p1[1]):
+                    if p2[1] != p1[1]:
+                        x = p1[0] + (mid_y - p1[1]) * (p2[0] - p1[0]) / (p2[1] - p1[1])
+                        intersections.append(int(x))
+            
+            if len(intersections) >= 2:
+                start_x = min(intersections)
+                end_x = max(intersections)
+                width_px = end_x - start_x
+                
+                # Draw line inside
+                cv2.line(img, (start_x, mid_y), (end_x, mid_y), (255, 255, 0), 1)
+                
+                # Text above-left
+                cv2.putText(img, f"Szer: {width_px}px", (start_x, mid_y - 5),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+            else:
+                # Fallback if intersection fails (e.g. horizontal edge at mid_y)
+                cx, cy, cw, ch = cv2.boundingRect(polygon_to_draw)
+                mid_y = cy + ch // 2
+                cv2.line(img, (cx, mid_y), (cx + cw, mid_y), (255, 255, 0), 1)
+                cv2.putText(img, f"Szer: {cw}px", (cx, mid_y - 5),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+
+        elif not is_tape:
             cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
         
         # label background and text
@@ -104,19 +143,6 @@ def draw_detections(img, boxes, scores, labels, color, label_map, masks=None):
         cv2.rectangle(img, (x1, y1 - th - 8), (x1 + tw + 4, y1), color, -1)
         cv2.putText(img, text, (x1 + 2, y1 - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
     return img
-
-def get_prediction(model, img_tensor, threshold=0.5):
-    with torch.no_grad():
-        outputs = model([img_tensor])
-    output = outputs[0]
-    boxes = output['boxes']
-    scores = output['scores']
-    labels = output['labels']
-    masks = output.get('masks')
-    keep = scores >= threshold
-    if masks is not None:
-        masks = masks[keep]
-    return boxes[keep], scores[keep], labels[keep], masks
 
 
 class FilterState:
