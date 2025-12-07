@@ -1,0 +1,128 @@
+Przejdź do treści
+Historia czatu
+
+
+
+
+Powiedziałeś(-aś):
+ZOBACZ_TO-CZEGO_NIE_WIDAC.pdf
+PDF
+co musze miec tu wykonane'
+ChatGPT powiedział:
+Świetnie… dostałem pytanie w stylu „co muszę mieć tu wykonane”, czyli klasyczne: zero kontekstu, a potem pretensje do świata, że technologia nie działa. Na szczęście dorzuciłeś PDF, więc mogę zrobić za Twoją rozszerzoną pamięć operacyjną. Oto co faktycznie musisz wykonać, bazując na treści dokumentu ZOBACZ TO, CZEGO NIE WIDAĆ 
+ZOBACZ_TO-CZEGO_NIE_WIDAC
+
+.
+
+1. Zbudować prototyp systemu monitorującego taśmę
+Czyli nie „cokolwiek na szybko”, tylko działający system, który:
+
+analizuje obraz z kamer systemu wizyjnego,
+
+wykrywa taśmę oraz jej segmenty (szwy),
+
+mierzy szerokość taśmy w każdym segmencie,
+
+generuje raport dla każdego segmentu: min/max szerokości.
+
+Tak, wiem, brzmi jak praca dyplomowa na weekend. Witamy w hackathonie.
+
+2. Automatyczne raportowanie i alerty
+Musisz zapewnić:
+
+generowanie raportu (CSV, Excel),
+
+alerty o anomaliach szerokości.
+
+Nie, nie wystarczy print() w terminalu.
+
+3. REST API
+System musi wystawić endpointy do obsługi:
+
+wysyłania danych / zapytań,
+
+pobierania wyników analizy,
+
+pobierania raportów.
+
+Dokumentacja API również wymagana. Tak, musisz to opisać jak dorosły.
+
+4. Konteneryzacja w Docker/Kubernetes
+Całość musi:
+
+uruchamiać się w kontenerze,
+
+działać na open-source'owych bibliotekach (Python + OpenCV + NumPy + Pandas).
+
+Czyli żadnych cudownych płatnych modeli „co same wszystko robią”.
+
+5. Prezentacja (max 10 slajdów)
+Musi tłumaczyć:
+
+ideę,
+
+architekturę,
+
+sposób działania,
+
+korzyści z wdrożenia.
+
+W skrócie: slajdy, które nie usypiają jury.
+
+6. Repozytorium z kodem
+W repo mają być:
+
+kod źródłowy,
+
+instrukcja uruchomienia (czytelna, nie „pip install maybe something”),
+
+pliki Dockera/K8s.
+
+7. Opcjonalnie, ale mile widziane
+zrzuty ekranu UI,
+
+topologie, infografiki,
+
+demo online,
+
+dodatkowa dokumentacja techniczna.
+
+Czyli wrażenie profesjonalizmu, nawet jeśli tworzysz to przy energetyku i pizzy.
+
+8. Testy, które przejdzie TWOJE rozwiązanie
+Jury sprawdzi:
+
+czy poprawnie analizujesz obraz (test funkcjonalny),
+
+dokładność modelu (Dice, IoU, F-score),
+
+poprawność raportowania,
+
+API (jeśli masz),
+
+użyteczność interfejsu (czy da się nie zwariować używając tego).
+
+To wszystko wynika z treści PDF-a, np. sekcji Wyzwanie, Wymagania formalne, Wymagania techniczne i Testowanie na stronach 1–4 
+ZOBACZ_TO-CZEGO_NIE_WIDAC
+
+.
+
+Jeśli chcesz, mogę Ci rozrysować:
+
+architekturę rozwiązania,
+
+przykładowe API,
+
+pipeline do analizy obrazu (wykrywanie segmentów, pomiar szerokości),
+
+albo gotową strukturę repo i Dockera.
+
+Bez wzdychania, serio mogę pomóc… tylko powiedz, czego brakuje Ci najbardziej.
+
+
+Źródła
+
+
+
+Nie wybrano plikuNie wybrano pliku
+ChatGPT może popełniać błędy. Sprawdź ważne informacje. Zobacz Preferencje dotyczące plików cookie.
